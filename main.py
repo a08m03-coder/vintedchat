@@ -1,102 +1,49 @@
-import requests
-import time
 import os
-import threading
-from flask import Flask
+import time
+import requests
+import telegram
 
-# --- CONFIGURAZIONE ---
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-# LINK DI RICERCA VINTED (puoi metterne più di uno)
+# Lista dei link JSON di Vinted
 VINTED_LINKS = [
     "https://www.vinted.it/api/v2/catalog/items?search_text=nike%20uomo&page=1",
+    "https://www.vinted.it/api/v2/catalog/items?search_text=nike%20uomo&page=2",
 ]
 
-SEEN_IDS = set()  # articoli già inviati
+# Telegram bot
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+CHAT_ID = os.environ.get("CHAT_ID")
+bot = telegram.Bot(token=BOT_TOKEN)
 
-# --- FUNZIONI ---
-def send_telegram_message(text, image_url=None):
-    """Invia un messaggio Telegram con testo e immagine."""
-    send_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    photo_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+# Memorizza gli ID già inviati
+seen_ids = set()
 
-    try:
-        if image_url:
-            data = {"chat_id": TELEGRAM_CHAT_ID, "caption": text, "parse_mode": "Markdown"}
-            files = {"photo": requests.get(image_url).content}
-            resp = requests.post(photo_url, data=data, files=files, timeout=10)
-        else:
-            data = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "Markdown"}
-            resp = requests.post(send_url, data=data, timeout=10)
-        print(f"Invio Telegram: {resp.status_code} - {resp.text[:50]}")
-    except Exception as e:
-        print(f"Errore invio Telegram: {e}")
-
-def get_vinted_items_json(url):
-    """Scarica articoli usando l'API JSON interna di Vinted."""
+def fetch_items(url):
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-        "Accept-Language": "it-IT,it;q=0.9",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
     }
-
     try:
         r = requests.get(url, headers=headers, timeout=10)
         r.raise_for_status()
+        data = r.json()
+        return data.get("items", [])
     except Exception as e:
-        print(f"Errore caricamento {url}: {e}")
+        print(f"Errore fetch: {e}")
         return []
 
-    items = []
+def send_telegram(item):
+    text = f"{item['title']}\nPrezzo: {item['price']} {item['currency']}\nLink: {item['url']}"
+    bot.send_photo(chat_id=CHAT_ID, photo=item['image_url'], caption=text)
 
-    try:
-        data = r.json()  # se il link restituisce JSON
-        # Vinted spesso invia JSON dentro 'items' o 'search_items'
-        search_items = data.get('items') or data.get('search_items') or []
-        for item in search_items:
-            item_id = str(item.get('id'))
-            title = item.get('title') or "Senza titolo"
-            price = item.get('price') or "N/A"
-            url_link = "https://www.vinted.it" + item.get('url', '/')
-            image_url = item.get('photo', {}).get('url') or None
-            items.append({"id": item_id, "title": title, "price": price, "url": url_link, "image": image_url})
-    except Exception:
-        # fallback: se non JSON, ignora e stampa errore
-        print("❌ Non è JSON valido o struttura diversa")
-
-    return items
-
-def main():
-    # messaggio test all’avvio
-    send_telegram_message("✅ Test Telegram: il bot è attivo e pronto a inviare articoli!")
-    print("🔄 Avvio monitoraggio Vinted...")
-
-    while True:
-        for url in VINTED_LINKS:
-            print(f"Controllo {url}")
-            items = get_vinted_items_json(url)
-            print(f"Trovati {len(items)} articoli JSON su {url}")
-
-            for item in items:
-                if item["id"] not in SEEN_IDS:
-                    SEEN_IDS.add(item["id"])
-                    message = f"🧢 *{item['title']}*\n💶 {item['price']}\n🔗 {item['url']}"
-                    send_telegram_message(message, item["image"])
-                    print(f"Inviato: {item['title']} - {item['price']}")
-
-        time.sleep(300)  # ogni 5 minuti
-
-# --- SERVER FLASK PER RENDER ---
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "✅ Vinted Watcher API JSON attivo"
-
-def run_flask():
-    app.run(host="0.0.0.0", port=10000)
-
-# --- AVVIO ---
-if __name__ == "__main__":
-    threading.Thread(target=run_flask).start()
-    main()
+while True:
+    print("🔄 Controllo nuovi articoli...")
+    for link in VINTED_LINKS:
+        items = fetch_items(link)
+        for item in items:
+            if item['id'] not in seen_ids:
+                try:
+                    send_telegram(item)
+                    seen_ids.add(item['id'])
+                    print(f"Inviato: {item['title']}")
+                except Exception as e:
+                    print(f"Errore invio Telegram: {e}")
+    time.sleep(300)  # 5 minuti

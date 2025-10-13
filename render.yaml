@@ -1,5 +1,5 @@
 services:
-  - type: worker
+  - type: web
     name: vinted-watcher
     env: python
     plan: free
@@ -10,3 +10,4 @@ services:
         sync: false
       - key: TELEGRAM_CHAT_ID
         sync: false
+

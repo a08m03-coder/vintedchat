@@ -1,26 +1,23 @@
-import os
-import time
 import requests
-import telegram
+import time
+from telegram import Bot
 
-# Lista dei link JSON di Vinted
+# --- CONFIGURA QUI ---
+TELEGRAM_TOKEN = "8495082488:AAEOuLGh7x3Nxi9vRj7wPgq7NUU6GJ_rj74"
+CHAT_ID = "365474662"
+
+# Link JSON Vinted già pronti (prime 3 pagine "nike uomo")
 VINTED_LINKS = [
     "https://www.vinted.it/api/v2/catalog/items?search_text=nike%20uomo&page=1",
     "https://www.vinted.it/api/v2/catalog/items?search_text=nike%20uomo&page=2",
+    "https://www.vinted.it/api/v2/catalog/items?search_text=nike%20uomo&page=3"
 ]
 
-# Telegram bot
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-CHAT_ID = os.environ.get("CHAT_ID")
-bot = telegram.Bot(token=BOT_TOKEN)
-
-# Memorizza gli ID già inviati
+bot = Bot(token=TELEGRAM_TOKEN)
 seen_ids = set()
 
 def fetch_items(url):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-    }
+    headers = {"User-Agent": "Mozilla/5.0"}
     try:
         r = requests.get(url, headers=headers, timeout=10)
         r.raise_for_status()
@@ -31,19 +28,26 @@ def fetch_items(url):
         return []
 
 def send_telegram(item):
-    text = f"{item['title']}\nPrezzo: {item['price']} {item['currency']}\nLink: {item['url']}"
-    bot.send_photo(chat_id=CHAT_ID, photo=item['image_url'], caption=text)
+    title = item.get("title")
+    price = f"{item.get('price')} {item.get('currency')}"
+    link = "https://www.vinted.it" + item.get("url")
+    image = item.get("image_url")
 
-while True:
-    print("🔄 Controllo nuovi articoli...")
-    for link in VINTED_LINKS:
-        items = fetch_items(link)
-        for item in items:
-            if item['id'] not in seen_ids:
-                try:
+    message = f"{title}\nPrezzo: {price}\nLink: {link}"
+    try:
+        bot.send_photo(chat_id=CHAT_ID, photo=image, caption=message)
+        print(f"Inviato: {title}")
+    except Exception as e:
+        print(f"Errore invio Telegram: {e}")
+
+if __name__ == "__main__":
+    print("🔄 Avvio monitoraggio Vinted...")
+    while True:
+        for url in VINTED_LINKS:
+            items = fetch_items(url)
+            for item in items:
+                item_id = item.get("id")
+                if item_id not in seen_ids:
                     send_telegram(item)
-                    seen_ids.add(item['id'])
-                    print(f"Inviato: {item['title']}")
-                except Exception as e:
-                    print(f"Errore invio Telegram: {e}")
-    time.sleep(300)  # 5 minuti
+                    seen_ids.add(item_id)
+        time.sleep(300)  # controlla ogni 5 minuti

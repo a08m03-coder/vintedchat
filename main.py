@@ -80,10 +80,20 @@ if __name__ == "__main__":
     main()
 
 from flask import Flask
+import threading
+
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Vinted Watcher attivo ✅"
+    return "✅ Vinted Watcher attivo e funzionante"
+
+def run_flask():
+    app.run(host="0.0.0.0", port=10000)
+
+# Avvia Flask in un thread parallelo così lo script continua a funzionare
+threading.Thread(target=run_flask).start()
+
+
 
 

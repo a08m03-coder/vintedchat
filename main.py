@@ -16,7 +16,7 @@ VINTED_LINKS = [
 ]
 
 # --- MEMORIA ARTICOLI VISTI ---
-SEEN_IDS = set()
+SEEN_IDS = set()  # Reset ogni avvio per test immediato
 
 # --- FUNZIONI ---
 def send_telegram_message(text, image_url=None):
@@ -71,7 +71,7 @@ def get_vinted_items(url):
     return items
 
 def main():
-    # --- MESSAGGIO DI TEST ALL’AVVIO ---
+    # --- MESSAGGIO DI TEST TELEGRAM ALL’AVVIO ---
     send_telegram_message("✅ Test Telegram: il bot è attivo!")
     print("🔄 Avvio monitoraggio Vinted...")
 
@@ -82,7 +82,6 @@ def main():
             print(f"Trovati {len(items)} articoli su {url}")
 
             for i, item in enumerate(items, start=1):
-                # --- INVIO IMMEDIATO DI TUTTI GLI ARTICOLI PER TEST ---
                 if item["id"] not in SEEN_IDS:
                     SEEN_IDS.add(item["id"])
                     message = f"🧢 *{item['title']}*\n💶 {item['price']}\n🔗 {item['url']}"

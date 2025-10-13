@@ -1,15 +1,17 @@
 import requests
 import time
 import os
+import threading
 from bs4 import BeautifulSoup
+from flask import Flask
 
 # --- CONFIGURAZIONE ---
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# Puoi aggiungere più link di ricerca Vinted qui:
+# Inserisci qui i tuoi link di ricerca Vinted
 VINTED_LINKS = [
-    "https://www.vinted.it/catalog?search_text=nike%20uomo&size_ids[]=208&page=1&time=1760365096&price_to=100&currency=EUR&order=newest_first",
+    "https://www.vinted.it/catalog?search_text=nike%20uomo&currency=EUR&order=newest_first&size_ids[]=208&page=1",
     # aggiungi altri link se vuoi
 ]
 
@@ -21,13 +23,16 @@ def send_telegram_message(text, image_url=None):
     send_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     photo_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
 
-    if image_url:
-        data = {"chat_id": TELEGRAM_CHAT_ID, "caption": text}
-        files = {"photo": requests.get(image_url).content}
-        requests.post(photo_url, data=data, files=files)
-    else:
-        data = {"chat_id": TELEGRAM_CHAT_ID, "text": text}
-        requests.post(send_url, data=data)
+    try:
+        if image_url:
+            data = {"chat_id": TELEGRAM_CHAT_ID, "caption": text, "parse_mode": "Markdown"}
+            files = {"photo": requests.get(image_url).content}
+            requests.post(photo_url, data=data, files=files, timeout=10)
+        else:
+            data = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "Markdown"}
+            requests.post(send_url, data=data, timeout=10)
+    except Exception as e:
+        print(f"Errore nell'invio del messaggio Telegram: {e}")
 
 def get_vinted_items(url):
     """Scarica e restituisce gli articoli da una ricerca Vinted."""
@@ -76,12 +81,7 @@ def main():
                     send_telegram_message(message, item["image"])
         time.sleep(300)  # ogni 5 minuti
 
-if __name__ == "__main__":
-    main()
-
-from flask import Flask
-import threading
-
+# --- SERVER FLASK per mantenere attivo Render ---
 app = Flask(__name__)
 
 @app.route('/')
@@ -91,9 +91,8 @@ def home():
 def run_flask():
     app.run(host="0.0.0.0", port=10000)
 
-# Avvia Flask in un thread parallelo così lo script continua a funzionare
-threading.Thread(target=run_flask).start()
-
-
-
-
+if __name__ == "__main__":
+    # Avvia il server Flask in un thread parallelo
+    threading.Thread(target=run_flask).start()
+    # Esegue il loop principale
+    main()

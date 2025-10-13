@@ -1,112 +1,95 @@
 import os
-import requests
 import time
-import logging
-import json
+import requests
+from bs4 import BeautifulSoup
 from telegram import Bot
 
-# --- Configurazione logging dettagliato ---
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
-# --- Variabili d'ambiente Telegram ---
+# Legge i token dalle environment variables
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-if not TELEGRAM_TOKEN or not CHAT_ID:
-    logging.error("Devi impostare TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID su Render")
-    raise ValueError("Variabili d'ambiente mancanti")
-
 bot = Bot(token=TELEGRAM_TOKEN)
 
-# --- Link JSON Vinted ---
+# Lista dei link di ricerca Vinted da monitorare
 VINTED_LINKS = [
     "https://www.vinted.it/api/v2/catalog/items?search_text=nike%20uomo&page=1",
-    "https://www.vinted.it/api/v2/catalog/items?search_text=nike%20uomo&page=2",
-    "https://www.vinted.it/api/v2/catalog/items?search_text=nike%20uomo&page=3"
+    "https://www.vinted.it/api/v2/catalog/items?search_text=nike%20uomo&page=2"
 ]
 
-# --- File dove salvare gli ID già inviati ---
-SEEN_FILE = "seen_ids.json"
+# Headers realistici per evitare il 403
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
+    "Accept-Language": "it-IT,it;q=0.9",
+    "Accept": "application/json",
+}
 
-# --- Carica gli ID già inviati ---
-if os.path.exists(SEEN_FILE):
+# Memorizza gli ID già inviati per evitare duplicati
+seen_items = set()
+
+def fetch_vinted(link):
     try:
-        with open(SEEN_FILE, "r") as f:
-            seen_ids = set(json.load(f))
-        logging.info(f"Caricati {len(seen_ids)} ID già inviati dal file")
+        response = requests.get(link, headers=HEADERS)
+        response.raise_for_status()
+        return response.json()
+    except requests.HTTPError as e:
+        print(f"[ERROR] Errore HTTP fetch: {e} su {link}")
+        return None
     except Exception as e:
-        logging.error(f"Errore caricamento seen_ids: {e}")
-        seen_ids = set()
-else:
-    seen_ids = set()
+        print(f"[ERROR] Errore generico fetch: {e} su {link}")
+        return None
 
-def save_seen_ids():
-    try:
-        with open(SEEN_FILE, "w") as f:
-            json.dump(list(seen_ids), f)
-        logging.info(f"Salvati {len(seen_ids)} ID inviati")
-    except Exception as e:
-        logging.error(f"Errore salvataggio seen_ids: {e}")
-
-def fetch_items(url):
-    headers = {"User-Agent": "Mozilla/5.0"}
-    try:
-        r = requests.get(url, headers=headers, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        items = data.get("items", [])
-        logging.info(f"Fetch completato: {len(items)} articoli trovati su {url}")
-        return items
-    except requests.RequestException as e:
-        logging.error(f"Errore HTTP fetch: {e} su {url}")
-        return []
-    except ValueError as e:
-        logging.error(f"Errore parsing JSON: {e} su {url}")
+def process_items(data):
+    if not data or "items" not in data:
         return []
 
-def send_telegram(item):
-    try:
+    new_items = []
+    for item in data["items"]:
         item_id = item.get("id")
-        if not item_id:
-            logging.warning("Articolo senza ID, salto")
-            return
+        if item_id in seen_items:
+            continue
+        seen_items.add(item_id)
 
-        title = item.get("title") or "Nessun titolo"
-        price = f"{item.get('price', '0')} {item.get('currency', '')}"
-        link_path = item.get("url")
-        image = item.get("image_url")
+        title = item.get("title", "Senza titolo")
+        price = item.get("price", {}).get("amount", "N/A")
+        currency = item.get("price", {}).get("currency", "€")
+        url = f"https://www.vinted.it/item/{item_id}"
+        image = item.get("photos", [{}])[0].get("url", "")
 
-        if not link_path:
-            logging.warning(f"Articolo {item_id} senza URL, salto")
-            return
-        if not image:
-            logging.warning(f"Articolo {item_id} senza immagine, salto")
-            return
+        new_items.append({
+            "title": title,
+            "price": f"{price} {currency}",
+            "url": url,
+            "image": image
+        })
+    return new_items
 
-        link = "https://www.vinted.it" + link_path
-        message = f"{title}\nPrezzo: {price}\nLink: {link}"
+def send_telegram(items):
+    for item in items:
+        message = f"{item['title']}\nPrezzo: {item['price']}\nLink: {item['url']}"
+        if item["image"]:
+            bot.send_photo(chat_id=CHAT_ID, photo=item["image"], caption=message)
+        else:
+            bot.send_message(chat_id=CHAT_ID, text=message)
 
-        bot.send_photo(chat_id=CHAT_ID, photo=image, caption=message)
-        logging.info(f"Inviato articolo {item_id}: {title}")
-    except Exception as e:
-        logging.error(f"Errore invio Telegram: {e}")
+def main():
+    print("🔄 Avvio monitoraggio Vinted...")
+    while True:
+        for link in VINTED_LINKS:
+            print(f"Controllo {link}")
+            data = fetch_vinted(link)
+            new_items = process_items(data)
+            if new_items:
+                send_telegram(new_items)
+                print(f"[INFO] Inviati {len(new_items)} nuovi articoli")
+            else:
+                print(f"[WARNING] Nessun articolo trovato su {link}")
+        print("[INFO] Attesa 5 minuti prima del prossimo controllo...")
+        time.sleep(300)  # 5 minuti
 
 if __name__ == "__main__":
-    logging.info("🔄 Avvio monitoraggio Vinted...")
-    while True:
-        for url in VINTED_LINKS:
-            items = fetch_items(url)
-            if not items:
-                logging.warning(f"Nessun articolo trovato su {url}")
-            for item in items:
-                item_id = item.get("id")
-                if item_id and item_id not in seen_ids:
-                    send_telegram(item)
-                    seen_ids.add(item_id)
-                    save_seen_ids()  # salva subito dopo invio
-        logging.info("Attesa 5 minuti prima del prossimo controllo...")
-        time.sleep(300)  # 5 minuti
+    # Test rapido bot
+    try:
+        bot.send_message(chat_id=CHAT_ID, text="Test bot funzionante ✅")
+    except Exception as e:
+        print(f"[ERROR] Errore invio test Telegram: {e}")
+    main()

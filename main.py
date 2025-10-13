@@ -9,15 +9,16 @@ from flask import Flask
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# Inserisci qui i tuoi link di ricerca Vinted
+# LINK DI RICERCA VINTED
 VINTED_LINKS = [
     "https://www.vinted.it/catalog?search_text=nike%20uomo&currency=EUR&order=newest_first&size_ids[]=208&page=1",
     # aggiungi altri link se vuoi
 ]
 
-# Per salvare gli ID già visti
+# --- MEMORIA ARTICOLI VISTI ---
 SEEN_IDS = set()
 
+# --- FUNZIONI ---
 def send_telegram_message(text, image_url=None):
     """Invia un messaggio Telegram con testo e immagine."""
     send_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -32,7 +33,7 @@ def send_telegram_message(text, image_url=None):
             data = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "Markdown"}
             requests.post(send_url, data=data, timeout=10)
     except Exception as e:
-        print(f"Errore nell'invio del messaggio Telegram: {e}")
+        print(f"Errore invio Telegram: {e}")
 
 def get_vinted_items(url):
     """Scarica e restituisce gli articoli da una ricerca Vinted."""
@@ -45,12 +46,12 @@ def get_vinted_items(url):
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
     except Exception as e:
-        print(f"Errore nel caricamento di {url}: {e}")
+        print(f"Errore caricamento {url}: {e}")
         return []
 
     soup = BeautifulSoup(response.text, "html.parser")
-
     items = []
+
     for item in soup.select("div[data-testid='item'] a[href^='/items/']"):
         link = "https://www.vinted.it" + item["href"]
         title_tag = item.select_one("h3")
@@ -66,22 +67,31 @@ def get_vinted_items(url):
         image_url = img_tag["src"] if img_tag else None
 
         items.append({"id": item_id, "title": title, "price": price, "url": link, "image": image_url})
+
     return items
 
 def main():
+    # --- MESSAGGIO DI TEST ALL’AVVIO ---
+    send_telegram_message("✅ Test Telegram: il bot è attivo!")
     print("🔄 Avvio monitoraggio Vinted...")
+
     while True:
         for url in VINTED_LINKS:
             print(f"Controllo {url}")
             items = get_vinted_items(url)
-            for item in items:
+            print(f"Trovati {len(items)} articoli su {url}")
+
+            for i, item in enumerate(items, start=1):
+                # --- INVIO IMMEDIATO DI TUTTI GLI ARTICOLI PER TEST ---
                 if item["id"] not in SEEN_IDS:
                     SEEN_IDS.add(item["id"])
                     message = f"🧢 *{item['title']}*\n💶 {item['price']}\n🔗 {item['url']}"
                     send_telegram_message(message, item["image"])
+                    print(f"{i}. Inviato: {item['title']} - {item['price']}")
+
         time.sleep(300)  # ogni 5 minuti
 
-# --- SERVER FLASK per mantenere attivo Render ---
+# --- SERVER FLASK PER RENDER ---
 app = Flask(__name__)
 
 @app.route('/')
@@ -91,8 +101,7 @@ def home():
 def run_flask():
     app.run(host="0.0.0.0", port=10000)
 
+# --- AVVIO ---
 if __name__ == "__main__":
-    # Avvia il server Flask in un thread parallelo
     threading.Thread(target=run_flask).start()
-    # Esegue il loop principale
     main()

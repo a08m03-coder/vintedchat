@@ -12,11 +12,10 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 # LINK DI RICERCA VINTED
 VINTED_LINKS = [
     "https://www.vinted.it/catalog?search_text=nike%20uomo&currency=EUR&order=newest_first&size_ids[]=208&page=1",
-    # aggiungi altri link se vuoi
 ]
 
 # --- MEMORIA ARTICOLI VISTI ---
-SEEN_IDS = set()  # Reset ogni avvio per test immediato
+SEEN_IDS = set()
 
 # --- FUNZIONI ---
 def send_telegram_message(text, image_url=None):
@@ -28,10 +27,11 @@ def send_telegram_message(text, image_url=None):
         if image_url:
             data = {"chat_id": TELEGRAM_CHAT_ID, "caption": text, "parse_mode": "Markdown"}
             files = {"photo": requests.get(image_url).content}
-            requests.post(photo_url, data=data, files=files, timeout=10)
+            resp = requests.post(photo_url, data=data, files=files, timeout=10)
         else:
             data = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "Markdown"}
-            requests.post(send_url, data=data, timeout=10)
+            resp = requests.post(send_url, data=data, timeout=10)
+        print(f"Invio Telegram risposta: {resp.status_code} - {resp.text[:50]}")
     except Exception as e:
         print(f"Errore invio Telegram: {e}")
 
@@ -52,6 +52,11 @@ def get_vinted_items(url):
     soup = BeautifulSoup(response.text, "html.parser")
     items = []
 
+    # 🔹 Stampiamo TUTTI i div per debug
+    divs = soup.find_all("div")
+    print(f"Numero totale div nella pagina: {len(divs)}")
+
+    # Selettori originali
     for item in soup.select("div[data-testid='item'] a[href^='/items/']"):
         link = "https://www.vinted.it" + item["href"]
         title_tag = item.select_one("h3")
@@ -68,10 +73,11 @@ def get_vinted_items(url):
 
         items.append({"id": item_id, "title": title, "price": price, "url": link, "image": image_url})
 
+    print(f"Trovati {len(items)} articoli con il selettore attuale.")
     return items
 
 def main():
-    # --- MESSAGGIO DI TEST TELEGRAM ALL’AVVIO ---
+    # --- MESSAGGIO DI TEST TELEGRAM ---
     send_telegram_message("✅ Test Telegram: il bot è attivo!")
     print("🔄 Avvio monitoraggio Vinted...")
 
@@ -79,7 +85,6 @@ def main():
         for url in VINTED_LINKS:
             print(f"Controllo {url}")
             items = get_vinted_items(url)
-            print(f"Trovati {len(items)} articoli su {url}")
 
             for i, item in enumerate(items, start=1):
                 if item["id"] not in SEEN_IDS:

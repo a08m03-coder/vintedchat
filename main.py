@@ -11,7 +11,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # LINK DI RICERCA VINTED
 VINTED_LINKS = [
-    "https://www.vinted.it/catalog?search_text=nike%20uomo&currency=EUR&order=newest_first&size_ids[]=208&page=1",
+    "https://www.vinted.it/catalog?search_text=nike%20uomo&size_ids[]=208&page=1&time=1760365096&price_to=100&currency=EUR&order=newest_first",
 ]
 
 # --- MEMORIA ARTICOLI VISTI ---
@@ -109,3 +109,4 @@ def run_flask():
 if __name__ == "__main__":
     threading.Thread(target=run_flask).start()
     main()
+
